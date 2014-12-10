@@ -17,6 +17,7 @@ connection to the IRC server.
                      defaults to *, the hostname
     -c --conf=x      read configuration file x
     -q --quit        tell the currently running daemon to quit
+    -u --user        message a user directly instead of a channel
     -v --verbose     dump network and protocol traffic
        --serveronly  stay in foreground, only start the persistent process
 If <message> is -, will read from stdin, and announce on the given channel.
@@ -28,6 +29,7 @@ option is incompatible with --serveronly operation.
 identity = '*'
 configfiles = ["/etc/nodebot.conf", "/usr/local/etc/nodebot.conf"]
 sendquit = False
+userMsg = False
 serverOnly = False
 verbose = False
 running = True
@@ -86,11 +88,12 @@ def read_commandline(argv):
     global configfiles
     global sendquit
     global serverOnly
+    global userMsg
     global verbose
 
     try:
-        optstr = "svnqhi:c:"
-        optlist = ['single', 'verbose', 'serveronly', 'quit', 'help',
+        optstr = "svnqhui:c:"
+        optlist = ['single', 'verbose', 'serveronly', 'quit', 'help', 'user',
                    'identity=', 'conf=']
         opts, argv = getopt.getopt(argv, optstr, optlist)
     except getopt.GetoptError, err:
@@ -102,7 +105,7 @@ def read_commandline(argv):
         if o in ('-h', '--help'):
             usage()
             sys.exit(0)
-        elif o in ('--serveronly'):
+        elif o in ('--serveronly',):
             serverOnly = True
         elif o in ('-c', '--conf'):
             configfiles.insert(0, a)
@@ -110,6 +113,8 @@ def read_commandline(argv):
             identity = a
         elif o in ('-q', '--quit'):
             sendquit = True
+        elif o in ('-u', '--user'):
+            userMsg = True
         elif o in ('-v', '--verbose'):
             verbose = True
         else:
@@ -448,7 +453,7 @@ def process_dependent(sock):
             ifverbose("!! received quit")
             running = False
             break
-        mo = re.match(r'^#([\w-]+)\s+(.+)?$', line)
+        mo = re.match(r'^([\w#-]+)\s+(.+)?$', line)
         if mo:
             ret.append( mo.groups() ) # (channel, msg)
     return ret
@@ -491,7 +496,7 @@ def become_primary(listensock):
         try:
             if registered:
                 for chan, msg in upstreamdata:
-                    m = "PRIVMSG #%s :%s\r\n" % (chan, msg)
+                    m = "PRIVMSG %s :%s\r\n" % (chan, msg)
                     queue_output(irc, m)
                 upstreamdata = []
 
@@ -576,7 +581,8 @@ def become_dependent(sock):
     try:
         for m in getmsg():
             if m:
-                sock.send("#%s\t%s\n" % (channel, m))
+                maybeHash = '' if userMsg else '#'
+                sock.send("%s%s\t%s\n" % (maybeHash, channel, m))
     except (KeyboardInterrupt,), e:
         pass
 
